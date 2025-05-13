@@ -1,54 +1,96 @@
-from typing import List, Any
+from typing import List, Any, Dict
 
 class DecisionAgent:
     """
-    A simple decision-making agent to evaluate detected signals and suggest potential trade actions.
-    (This can be extended with more complex logic or even an AI agent in the future for adaptive decision-making.)
+    A decision-making agent to evaluate detected signals and suggest potential trade actions, with explicit SL/TP.
     """
-    def evaluate_signals(self, signals: List[dict]) -> str:
+    def evaluate_signals(self, signals: List[dict]) -> Dict[str, Any]:
         # Flags for detected conditions
         has_sell_liquidity = any(sig.get("type") == "LiquidityPool" and sig.get("side") == "buy" for sig in signals)
         has_buy_liquidity = any(sig.get("type") == "LiquidityPool" and sig.get("side") == "sell" for sig in signals)
-        has_bearish_ob = any(sig.get("type") == "OrderBlock" and sig.get("side") == "bearish" for sig in signals)
-        has_bullish_ob = any(sig.get("type") == "OrderBlock" and sig.get("side") == "bullish" for sig in signals)
-
-        # Detect Fair Value Gaps
+        
+        # Get all order blocks and fair value gaps
+        order_blocks = [sig for sig in signals if sig.get("type") == "OrderBlock"]
+        bullish_obs = [ob for ob in order_blocks if ob.get("side") == "bullish"]
+        bearish_obs = [ob for ob in order_blocks if ob.get("side") == "bearish"]
+        
         bullish_fvg = [sig for sig in signals if sig.get("type") == "FairValueGap" and sig.get("side") == "bullish"]
         bearish_fvg = [sig for sig in signals if sig.get("type") == "FairValueGap" and sig.get("side") == "bearish"]
+        
         has_bullish_fvg = len(bullish_fvg) > 0
         has_bearish_fvg = len(bearish_fvg) > 0
 
-        suggestion = "No immediate action – monitor the market for now."
+        # Default: no trade
+        result = {
+            "action": "none",
+            "entry_zone": None,
+            "stop_loss": None,
+            "take_profit": None,
+            "reason": "No immediate action – monitor the market for now."
+        }
+
+        # Helper for 2R target
+        def calc_2r(entry, sl, direction):
+            risk = abs(entry - sl)
+            if direction == 'long':
+                return entry + 2 * risk
+            else:
+                return entry - 2 * risk
+
         # Bearish Silver Bullet (short) setup
         if has_buy_liquidity and has_bearish_fvg:
-            if has_bearish_ob:
-                sig = bearish_fvg[-1]
-                suggestion = (
-                    "**Bearish Silver Bullet:** Sell-side liquidity (equal highs) detected, a bearish Fair Value Gap at "
-                    f"{sig['gap_low']}–{sig['gap_high']}, and a bearish order block present. "
-                    "Enter short inside the gap, place stop-loss above the gap_high, and target a minimum 2R reward."
-                )
-            else:
-                sig = bearish_fvg[-1]
-                suggestion = (
-                    "**Bearish setup:** Sell-side liquidity (equal highs) and a bearish Fair Value Gap at "
-                    f"{sig['gap_low']}–{sig['gap_high']} detected. Consider entering short inside the gap with a stop-loss above gap_high, "
-                    "and wait for order block or market structure shift for confirmation."
-                )
+            sig = bearish_fvg[-1]
+            entry_zone = (sig['gap_low'], sig['gap_high'])
+            entry = (sig['gap_low'] + sig['gap_high']) / 2
+            stop_loss = sig['gap_high'] * 1.001  # 0.1% above gap high
+            take_profit = calc_2r(entry, stop_loss, 'short')
+            
+            # Include relevant order blocks in the reason
+            ob_info = ""
+            if bearish_obs:
+                ob_info = "\n\nRelevant bearish order blocks:"
+                for ob in bearish_obs[:3]:  # Show top 3 order blocks
+                    ob_info += f"\n- Order block at {ob['zone'][0]:.2f} - {ob['zone'][1]:.2f} (formed on {ob['time']})"
+            
+            reason = (
+                "Bearish setup: Sell-side liquidity (equal highs) and a bearish Fair Value Gap detected. "
+                f"Entry zone: {entry_zone[0]:.2f}–{entry_zone[1]:.2f}. Stop-loss: {stop_loss:.2f} above gap high. "
+                f"Take profit: {take_profit:.2f} (2R)."
+                f"{ob_info}"
+            )
+            result = {
+                "action": "sell",
+                "entry_zone": entry_zone,
+                "stop_loss": stop_loss,
+                "take_profit": take_profit,
+                "reason": reason
+            }
         # Bullish Silver Bullet (long) setup
         elif has_sell_liquidity and has_bullish_fvg:
-            if has_bullish_ob:
-                sig = bullish_fvg[-1]
-                suggestion = (
-                    "**Bullish Silver Bullet:** Buy-side liquidity (equal lows) detected, a bullish Fair Value Gap at "
-                    f"{sig['gap_low']}–{sig['gap_high']}, and a bullish order block present. "
-                    "Enter long inside the gap, place stop-loss below the gap_low, and target a minimum 2R reward."
-                )
-            else:
-                sig = bullish_fvg[-1]
-                suggestion = (
-                    "**Bullish setup:** Buy-side liquidity (equal lows) and a bullish Fair Value Gap at "
-                    f"{sig['gap_low']}–{sig['gap_high']} detected. Consider entering long inside the gap with a stop-loss below gap_low, "
-                    "and wait for order block or market structure shift for confirmation."
-                )
-        return suggestion
+            sig = bullish_fvg[-1]
+            entry_zone = (sig['gap_low'], sig['gap_high'])
+            entry = (sig['gap_low'] + sig['gap_high']) / 2
+            stop_loss = sig['gap_low'] * 0.999  # 0.1% below gap low
+            take_profit = calc_2r(entry, stop_loss, 'long')
+            
+            # Include relevant order blocks in the reason
+            ob_info = ""
+            if bullish_obs:
+                ob_info = "\n\nRelevant bullish order blocks:"
+                for ob in bullish_obs[:3]:  # Show top 3 order blocks
+                    ob_info += f"\n- Order block at {ob['zone'][0]:.2f} - {ob['zone'][1]:.2f} (formed on {ob['time']})"
+            
+            reason = (
+                "Bullish setup: Buy-side liquidity (equal lows) and a bullish Fair Value Gap detected. "
+                f"Entry zone: {entry_zone[0]:.2f}–{entry_zone[1]:.2f}. Stop-loss: {stop_loss:.2f} below gap low. "
+                f"Take profit: {take_profit:.2f} (2R)."
+                f"{ob_info}"
+            )
+            result = {
+                "action": "buy",
+                "entry_zone": entry_zone,
+                "stop_loss": stop_loss,
+                "take_profit": take_profit,
+                "reason": reason
+            }
+        return result

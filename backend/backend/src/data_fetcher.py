@@ -26,13 +26,13 @@ class YahooFinanceFetcher(DataFetcher):
     def __init__(self):
         # map each interval to how many days of history to fetch
         self._interval_periods = {
-            "1m": "3d",
-            "2m": "7d",
-            "5m": "14d",
-            "15m": "30d",
-            "1h": "60d",
-            "1d": "200d",
-            "5d": "365d",
+            "1m" : "7d",
+            "2m" : "14d",
+            "5m" : "30d",
+            "15m": "365d",
+            "1h" : "365d",
+            "1d" : "200d",
+            "5d" : "365d",
             "1wk": "365d",
             "1mo": "365d",
             "3mo": "365d"

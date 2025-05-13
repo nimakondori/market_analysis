@@ -84,28 +84,68 @@ async def get_market_data(interval: str = Query("1m", description="Timeframe int
         # Format alerts for frontend, using the actual signal timestamps
         formatted_alerts = []
         for i, (signal, alert_text) in enumerate(zip(signals, alerts)):
+            # Improved alert type logic
+            stype = signal.get('type')
+            side = signal.get('side')
             alert_type = 'neutral'
-            if 'Bullish' in alert_text:
-                alert_type = 'buy'
-            elif 'Bearish' in alert_text:
-                alert_type = 'sell'
-                
+            if stype == 'LiquidityPool':
+                if side == 'buy':
+                    alert_type = 'sell'
+                elif side == 'sell':
+                    alert_type = 'buy'
+            elif stype in ('FairValueGap', 'OrderBlock'):
+                if side == 'bullish':
+                    alert_type = 'buy'
+                elif side == 'bearish':
+                    alert_type = 'sell'
+
             # Convert signal time to Eastern Time for consistency
             signal_time = signal.get('time', datetime.now())
             if isinstance(signal_time, datetime):
                 et_time = signal_time.astimezone(analyzer.eastern)
                 timestamp = et_time.strftime('%Y-%m-%d %H:%M:%S')
             else:
-                # Fallback to current time if no valid timestamp
                 timestamp = datetime.now(analyzer.eastern).strftime('%Y-%m-%d %H:%M:%S')
-                
-            formatted_alerts.append({
+
+            # Attach stop_loss and take_profit if this alert matches the suggestion action and entry zone
+            stop_loss = None
+            take_profit = None
+            if suggestion['action'] in ['buy', 'sell'] and suggestion.get('entry_zone'):
+                if (alert_type == suggestion['action'] and
+                    'Fair Value Gap' in alert_text and
+                    f"{suggestion['entry_zone'][0]:.2f}" in alert_text and
+                    f"{suggestion['entry_zone'][1]:.2f}" in alert_text):
+                    stop_loss = suggestion['stop_loss']
+                    take_profit = suggestion['take_profit']
+
+            # Add neutral reason if alert is neutral
+            neutral_reason = None
+            if alert_type == 'neutral':
+                if stype == 'LiquidityPool':
+                    neutral_reason = (
+                        'This alert is neutral because it only indicates the presence of a liquidity pool (equal highs/lows) and does not by itself provide a directional trade signal. '
+                        'Look for confirmation from other patterns (e.g., Fair Value Gaps or Order Blocks) for actionable trades.'
+                    )
+                elif stype == 'FairValueGap' or stype == 'OrderBlock':
+                    neutral_reason = (
+                        'This alert is neutral because the detected pattern does not meet all criteria for a high-probability trade setup (e.g., missing confluence with liquidity or time window).' 
+                        'Monitor the market for further developments.'
+                    )
+                else:
+                    neutral_reason = 'No actionable trade direction detected for this pattern.'
+
+            alert_obj = {
                 'id': str(i + 1),
                 'timestamp': timestamp,
-                'message': alert_text,
+                'message': f"[{timestamp}] {alert_text}",
                 'type': alert_type,
-                'confidence': 0.85  # Default confidence
-            })
+                'confidence': 0.85,
+                'stop_loss': stop_loss,
+                'take_profit': take_profit
+            }
+            if alert_type == 'neutral':
+                alert_obj['neutral_reason'] = neutral_reason
+            formatted_alerts.append(alert_obj)
         
         return {
             'candles': formatted_candles,

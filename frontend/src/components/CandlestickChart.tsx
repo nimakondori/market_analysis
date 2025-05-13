@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { createChart, ColorType, IChartApi, ISeriesApi, CandlestickData, UTCTimestamp, SeriesMarker, CrosshairMode } from 'lightweight-charts';
+import { createChart, ColorType, IChartApi, ISeriesApi, CandlestickData, UTCTimestamp, SeriesMarker, CrosshairMode, LineStyle } from 'lightweight-charts';
 import { Candle } from '../types';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -10,12 +10,20 @@ dayjs.extend(timezone);
 interface Props {
   candles: Candle[];
   highlightedTimestamp: string | null;
+  suggestion?: {
+    action: string;
+    entry_zone?: [number, number];
+    stop_loss?: number;
+    take_profit?: number;
+  } | null;
 }
 
-const CandlestickChart = ({ candles, highlightedTimestamp }: Props) => {
+const CandlestickChart = ({ candles, highlightedTimestamp, suggestion }: Props) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const slLineRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const tpLineRef = useRef<ISeriesApi<"Line"> | null>(null);
 
   const formatTime = (timestamp: number): string => {
     const date = new Date(timestamp * 1000);
@@ -83,7 +91,29 @@ const CandlestickChart = ({ candles, highlightedTimestamp }: Props) => {
       wickDownColor: '#ef5350',
     });
 
+    // Create line series for SL and TP
+    const slLine = chart.addLineSeries({
+      color: '#ef5350',
+      lineWidth: 2,
+      lineStyle: LineStyle.Dashed,
+      lastValueVisible: true,
+      priceLineVisible: true,
+      priceLineWidth: 1,
+    });
+
+    const tpLine = chart.addLineSeries({
+      color: '#26a69a',
+      lineWidth: 2,
+      lineStyle: LineStyle.Dashed,
+      lastValueVisible: true,
+      priceLineVisible: true,
+      priceLineWidth: 1,
+    });
+
     seriesRef.current = candlestickSeries;
+    slLineRef.current = slLine;
+    tpLineRef.current = tpLine;
+
     const convertedData = convertCandles(candles);
     candlestickSeries.setData(convertedData);
 
@@ -113,7 +143,12 @@ const CandlestickChart = ({ candles, highlightedTimestamp }: Props) => {
   }, [candles]);
 
   useEffect(() => {
-    if (!seriesRef.current || !highlightedTimestamp) return;
+    if (!seriesRef.current || !highlightedTimestamp) {
+      // Clear SL and TP lines when not hovering
+      if (slLineRef.current) slLineRef.current.setData([]);
+      if (tpLineRef.current) tpLineRef.current.setData([]);
+      return;
+    }
 
     const timestamp = dayjs.tz(highlightedTimestamp, 'YYYY-MM-DD HH:mm:ss', 'America/New_York').unix() as UTCTimestamp;
     const markers: SeriesMarker<UTCTimestamp>[] = [{
@@ -126,12 +161,36 @@ const CandlestickChart = ({ candles, highlightedTimestamp }: Props) => {
 
     seriesRef.current.setMarkers(markers);
 
+    // Show SL and TP lines if we have a suggestion
+    if (suggestion?.stop_loss && suggestion?.take_profit) {
+      const timeRange = {
+        from: (timestamp - 10 * 60) as UTCTimestamp, // 10 minutes before
+        to: (timestamp + 10 * 60) as UTCTimestamp,   // 10 minutes after
+      };
+
+      if (slLineRef.current) {
+        slLineRef.current.setData([
+          { time: timeRange.from, value: suggestion.stop_loss },
+          { time: timeRange.to, value: suggestion.stop_loss },
+        ]);
+      }
+
+      if (tpLineRef.current) {
+        tpLineRef.current.setData([
+          { time: timeRange.from, value: suggestion.take_profit },
+          { time: timeRange.to, value: suggestion.take_profit },
+        ]);
+      }
+    }
+
     return () => {
       if (seriesRef.current) {
         seriesRef.current.setMarkers([]);
       }
+      if (slLineRef.current) slLineRef.current.setData([]);
+      if (tpLineRef.current) tpLineRef.current.setData([]);
     };
-  }, [highlightedTimestamp]);
+  }, [highlightedTimestamp, suggestion]);
 
   return (
     <div

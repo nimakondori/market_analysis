@@ -37,43 +37,48 @@ class PatternAnalyzer:
     def _detect_equal_highs(self, candles: List[Candle], start: int) -> List[Dict]:
         """Find pivot highs that repeat within tolerance (buy-side liquidity)."""
         events = []
-        highs: Dict[float, int] = {}
+        highs: Dict[float, list] = {}
         for c in candles[start:]:
             price = round(c.high, 6)
-            # cluster by tolerance
+            found = False
             for lvl in list(highs):
                 if abs(lvl - price) <= self.equal_tolerance:
-                    highs[lvl] += 1
+                    highs[lvl].append(c.time)
+                    found = True
                     break
-            else:
-                highs[price] = 1
-        for lvl, count in highs.items():
-            if count >= 2:
+            if not found:
+                highs[price] = [c.time]
+        for lvl, times in highs.items():
+            if len(times) >= 2:
                 events.append({
                     "type": "LiquidityPool",
                     "side": "buy",
                     "price": lvl,
+                    "times": [times[0], times[1]],
                 })
         return events
 
     def _detect_equal_lows(self, candles: List[Candle], start: int) -> List[Dict]:
         """Find pivot lows that repeat within tolerance (sell-side liquidity)."""
         events = []
-        lows: Dict[float, int] = {}
+        lows: Dict[float, list] = {}
         for c in candles[start:]:
             price = round(c.low, 6)
+            found = False
             for lvl in list(lows):
                 if abs(lvl - price) <= self.equal_tolerance:
-                    lows[lvl] += 1
+                    lows[lvl].append(c.time)
+                    found = True
                     break
-            else:
-                lows[price] = 1
-        for lvl, count in lows.items():
-            if count >= 2:
+            if not found:
+                lows[price] = [c.time]
+        for lvl, times in lows.items():
+            if len(times) >= 2:
                 events.append({
                     "type": "LiquidityPool",
                     "side": "sell",
                     "price": lvl,
+                    "times": [times[0], times[1]],
                 })
         return events
 
@@ -123,8 +128,19 @@ class PatternAnalyzer:
         before a strong displacement (3-candle impulse).
         """
         events = []
+        min_body_size = 0.0002  # Minimum body size as a percentage of price
+        min_volume = 1000  # Minimum volume threshold
+        
         for i in range(start, len(candles) - 3):
             c0, c1, c2, c3 = candles[i], candles[i+1], candles[i+2], candles[i+3]
+            
+            # Calculate body size as percentage of price
+            body_size = abs(c0.close - c0.open) / c0.open
+            
+            # Skip if candle is too small or volume is too low
+            if body_size < min_body_size or (c0.volume and c0.volume < min_volume):
+                continue
+                
             # displacement if 3-candle impulse
             if all(c.close > c.open for c in (c1, c2, c3)):
                 # last bearish before bullish move
@@ -133,7 +149,9 @@ class PatternAnalyzer:
                         "type": "OrderBlock",
                         "side": "bullish",
                         "zone": (c0.low, c0.high),
-                        "time": c0.time
+                        "time": c0.time,
+                        "body_size": body_size,
+                        "volume": c0.volume
                     })
             elif all(c.close < c.open for c in (c1, c2, c3)):
                 # last bullish before bearish move
@@ -142,6 +160,11 @@ class PatternAnalyzer:
                         "type": "OrderBlock",
                         "side": "bearish",
                         "zone": (c0.low, c0.high),
-                        "time": c0.time
+                        "time": c0.time,
+                        "body_size": body_size,
+                        "volume": c0.volume
                     })
+        
+        # Sort order blocks by body size and volume
+        events.sort(key=lambda x: (x.get('body_size', 0) * (x.get('volume', 0) or 0)), reverse=True)
         return events

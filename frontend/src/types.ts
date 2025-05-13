@@ -13,4 +13,6 @@ export interface Alert {
   message: string;
   type: 'buy' | 'sell' | 'neutral';
   confidence: number;
+  stop_loss?: number;
+  take_profit?: number;
 } 

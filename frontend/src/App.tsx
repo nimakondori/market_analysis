@@ -18,7 +18,7 @@ function App() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<{ action: string; reason: string; entry_zone?: [number, number]; stop_loss?: number; take_profit?: number } | null>(null);
   const [highlightedTimestamp, setHighlightedTimestamp] = useState<string | null>(null);
 
   useEffect(() => {
@@ -108,10 +108,28 @@ function App() {
           </MuiAlert>
         )}
 
-        {suggestion && (
-          <MuiAlert severity="info" sx={{ mb: 2 }}>
+        {suggestion && suggestion.action !== 'none' && (
+          <MuiAlert severity={suggestion.action === 'buy' ? 'success' : 'error'} sx={{ mb: 2 }}>
             <Box sx={{ '& p': { m: 0 } }}>
-              <ReactMarkdown>{suggestion.replace(/\*\*/g, '*')}</ReactMarkdown>
+              <Typography variant="subtitle1" gutterBottom>
+                {suggestion.action.toUpperCase()} Signal
+              </Typography>
+              <ReactMarkdown>{suggestion.reason}</ReactMarkdown>
+              {suggestion.entry_zone && (
+                <Typography variant="body2" sx={{ mt: 1 }}>
+                  Entry Zone: {suggestion.entry_zone[0].toFixed(2)} - {suggestion.entry_zone[1].toFixed(2)}
+                </Typography>
+              )}
+              {suggestion.stop_loss && (
+                <Typography variant="body2">
+                  Stop Loss: {suggestion.stop_loss.toFixed(2)}
+                </Typography>
+              )}
+              {suggestion.take_profit && (
+                <Typography variant="body2">
+                  Take Profit: {suggestion.take_profit.toFixed(2)}
+                </Typography>
+              )}
             </Box>
           </MuiAlert>
         )}
@@ -138,6 +156,7 @@ function App() {
             <CandlestickChart 
               candles={candles} 
               highlightedTimestamp={highlightedTimestamp}
+              suggestion={suggestion}
             />
           </Paper>
           <Paper elevation={3} sx={{ p: 2, height: '70vh', overflow: 'auto' }}>
