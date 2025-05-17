@@ -31,7 +31,19 @@ alert_gen = AlertGenerator()
 agent = DecisionAgent()
 
 @app.get("/api/market-data")
-async def get_market_data(interval: str = Query("1m", description="Timeframe interval, e.g. 1m, 5m, 1h, 1d")):
+async def get_market_data(
+    interval: str = Query("1m", description="Timeframe interval, e.g. 1m, 5m, 1h, 1d"),
+    symbol: str = Query("^GSPC", description="Symbol to fetch, e.g. ^GSPC, ^DJI, ^IXIC, AAPL, etc.")
+):
+    # Symbol mapping for human-readable names
+    symbol_map = {
+        '^GSPC': 'S&P 500 (SPX)',
+        '^DJI': 'Dow Jones (DJI)',
+        '^IXIC': 'Nasdaq (IXIC)',
+        'AAPL': 'Apple (AAPL)',
+        'MSFT': 'Microsoft (MSFT)',
+        # Add more as needed
+    }
     # validate the requested interval
     allowed_intervals = set(fetcher._interval_periods.keys()) if hasattr(fetcher, '_interval_periods') else set()
     if interval not in allowed_intervals:
@@ -40,37 +52,28 @@ async def get_market_data(interval: str = Query("1m", description="Timeframe int
             detail=f"Unsupported interval '{interval}'. Valid intervals: {', '.join(sorted(allowed_intervals))}"
         )
     try:
-        # Try different symbols in order of preference
-        symbols = ["^GSPC"]  # Try SPY first (supports 1m intraday), then fallback to S&P 500 index
+        # Use requested symbol, fallback to S&P 500 if not recognized
+        yf_symbol = symbol if symbol in symbol_map else '^GSPC'
+        human_name = symbol_map.get(yf_symbol, yf_symbol)
         # Use requested interval; fetch all available bars (limit=0 disables trimming)
         lookback_bars = 0
-        
         last_error = None
-        for symbol in symbols:
-            try:
-                print(f"Attempting to fetch data for {symbol} with interval={interval}")
-                candles = fetcher.fetch(symbol=symbol, interval=interval, limit=lookback_bars)
-                if candles:
-                    break
-            except Exception as e:
-                print(f"Failed to fetch {symbol} ({interval}): {str(e)}")
-                last_error = e
-                continue
-        else:  # If no symbol succeeded
+        try:
+            candles = fetcher.fetch(symbol=yf_symbol, interval=interval, limit=lookback_bars)
+        except Exception as e:
+            print(f"Failed to fetch {yf_symbol} ({interval}): {str(e)}")
+            last_error = e
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to fetch data for all symbols. Last error: {str(last_error)}"
+                detail=f"Failed to fetch data for symbol {yf_symbol}. Error: {str(e)}"
             )
-            
         # Analyze patterns
         signals = analyzer.analyze(candles)
         alerts = alert_gen.generate_alerts(signals)
         suggestion = agent.evaluate_signals(signals)
-        
         # Convert candles to frontend format, ensuring we use the actual market data time
         formatted_candles = []
         for candle in candles:
-            # Convert to Eastern Time for consistency
             et_time = candle.time.astimezone(analyzer.eastern)
             formatted_candles.append({
                 'time': et_time.strftime('%Y-%m-%d %H:%M:%S'),
@@ -80,11 +83,9 @@ async def get_market_data(interval: str = Query("1m", description="Timeframe int
                 'close': candle.close,
                 'volume': candle.volume if candle.volume else 0
             })
-        
         # Format alerts for frontend, using the actual signal timestamps
         formatted_alerts = []
         for i, (signal, alert_text) in enumerate(zip(signals, alerts)):
-            # Improved alert type logic
             stype = signal.get('type')
             side = signal.get('side')
             alert_type = 'neutral'
@@ -98,16 +99,12 @@ async def get_market_data(interval: str = Query("1m", description="Timeframe int
                     alert_type = 'buy'
                 elif side == 'bearish':
                     alert_type = 'sell'
-
-            # Convert signal time to Eastern Time for consistency
             signal_time = signal.get('time', datetime.now())
             if isinstance(signal_time, datetime):
                 et_time = signal_time.astimezone(analyzer.eastern)
                 timestamp = et_time.strftime('%Y-%m-%d %H:%M:%S')
             else:
                 timestamp = datetime.now(analyzer.eastern).strftime('%Y-%m-%d %H:%M:%S')
-
-            # Attach stop_loss and take_profit if this alert matches the suggestion action and entry zone
             stop_loss = None
             take_profit = None
             if suggestion['action'] in ['buy', 'sell'] and suggestion.get('entry_zone'):
@@ -117,8 +114,6 @@ async def get_market_data(interval: str = Query("1m", description="Timeframe int
                     f"{suggestion['entry_zone'][1]:.2f}" in alert_text):
                     stop_loss = suggestion['stop_loss']
                     take_profit = suggestion['take_profit']
-
-            # Add neutral reason if alert is neutral
             neutral_reason = None
             if alert_type == 'neutral':
                 if stype == 'LiquidityPool':
@@ -133,7 +128,6 @@ async def get_market_data(interval: str = Query("1m", description="Timeframe int
                     )
                 else:
                     neutral_reason = 'No actionable trade direction detected for this pattern.'
-
             alert_obj = {
                 'id': str(i + 1),
                 'timestamp': timestamp,
@@ -145,12 +139,19 @@ async def get_market_data(interval: str = Query("1m", description="Timeframe int
             }
             if alert_type == 'neutral':
                 alert_obj['neutral_reason'] = neutral_reason
+            # Pass through times if present (for frontend multi-marker support)
+            if 'times' in signal:
+                alert_obj['times'] = [
+                    t.strftime('%Y-%m-%d %H:%M:%S') if isinstance(t, datetime) else str(t)
+                    for t in signal['times']
+                ]
             formatted_alerts.append(alert_obj)
-        
         return {
             'candles': formatted_candles,
             'alerts': formatted_alerts,
-            'suggestion': suggestion
+            'suggestion': suggestion,
+            'symbol': yf_symbol,
+            'symbol_name': human_name
         }
         
     except Exception as e:

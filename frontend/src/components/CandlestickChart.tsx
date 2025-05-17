@@ -9,7 +9,7 @@ dayjs.extend(timezone);
 
 interface Props {
   candles: Candle[];
-  highlightedTimestamp: string | null;
+  highlightedTimestamps: string[] | null;
   suggestion?: {
     action: string;
     entry_zone?: [number, number];
@@ -18,12 +18,13 @@ interface Props {
   } | null;
 }
 
-const CandlestickChart = ({ candles, highlightedTimestamp, suggestion }: Props) => {
+const CandlestickChart = ({ candles, highlightedTimestamps, suggestion }: Props) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const slLineRef = useRef<ISeriesApi<"Line"> | null>(null);
   const tpLineRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   const formatTime = (timestamp: number): string => {
     const date = new Date(timestamp * 1000);
@@ -126,11 +127,22 @@ const CandlestickChart = ({ candles, highlightedTimestamp, suggestion }: Props) 
       }
     };
 
+    // Use ResizeObserver for parent/container size changes
+    if (chartContainerRef.current) {
+      resizeObserverRef.current = new window.ResizeObserver(() => {
+        handleResize();
+      });
+      resizeObserverRef.current.observe(chartContainerRef.current);
+    }
+
     window.addEventListener('resize', handleResize);
     chartRef.current = chart;
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      if (resizeObserverRef.current && chartContainerRef.current) {
+        resizeObserverRef.current.unobserve(chartContainerRef.current);
+      }
       chart.remove();
     };
   }, []);
@@ -143,29 +155,32 @@ const CandlestickChart = ({ candles, highlightedTimestamp, suggestion }: Props) 
   }, [candles]);
 
   useEffect(() => {
-    if (!seriesRef.current || !highlightedTimestamp) {
+    if (!seriesRef.current || !highlightedTimestamps || highlightedTimestamps.length === 0) {
       // Clear SL and TP lines when not hovering
       if (slLineRef.current) slLineRef.current.setData([]);
       if (tpLineRef.current) tpLineRef.current.setData([]);
+      if (seriesRef.current) seriesRef.current.setMarkers([]);
       return;
     }
 
-    const timestamp = dayjs.tz(highlightedTimestamp, 'YYYY-MM-DD HH:mm:ss', 'America/New_York').unix() as UTCTimestamp;
-    const markers: SeriesMarker<UTCTimestamp>[] = [{
-      time: timestamp,
-      position: 'aboveBar',
-      color: '#2196F3',
-      shape: 'circle',
-      text: formatTime(timestamp),
-    }];
+    const markers: SeriesMarker<UTCTimestamp>[] = highlightedTimestamps.map(ts => {
+      const timestamp = dayjs.tz(ts, 'YYYY-MM-DD HH:mm:ss', 'America/New_York').unix() as UTCTimestamp;
+      return {
+        time: timestamp,
+        position: 'aboveBar',
+        color: '#2196F3',
+        shape: 'circle',
+        text: formatTime(timestamp),
+      };
+    });
 
     seriesRef.current.setMarkers(markers);
 
     // Show SL and TP lines if we have a suggestion
     if (suggestion?.stop_loss && suggestion?.take_profit) {
       const timeRange = {
-        from: (timestamp - 10 * 60) as UTCTimestamp, // 10 minutes before
-        to: (timestamp + 10 * 60) as UTCTimestamp,   // 10 minutes after
+        from: (markers[0].time - 10 * 60) as UTCTimestamp, // 10 minutes before
+        to: (markers[markers.length - 1].time + 10 * 60) as UTCTimestamp,   // 10 minutes after
       };
 
       if (slLineRef.current) {
@@ -190,7 +205,7 @@ const CandlestickChart = ({ candles, highlightedTimestamp, suggestion }: Props) 
       if (slLineRef.current) slLineRef.current.setData([]);
       if (tpLineRef.current) tpLineRef.current.setData([]);
     };
-  }, [highlightedTimestamp, suggestion]);
+  }, [highlightedTimestamps, suggestion]);
 
   return (
     <div

@@ -15,4 +15,6 @@ export interface Alert {
   confidence: number;
   stop_loss?: number;
   take_profit?: number;
+  times?: string[];
+  neutral_reason?: string;
 } 

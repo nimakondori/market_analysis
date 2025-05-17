@@ -35,51 +35,61 @@ class PatternAnalyzer:
         return signals
 
     def _detect_equal_highs(self, candles: List[Candle], start: int) -> List[Dict]:
-        """Find pivot highs that repeat within tolerance (buy-side liquidity)."""
+        """Find pivot highs that repeat within tolerance (buy-side liquidity), with no breach in between and not consecutive."""
         events = []
-        highs: Dict[float, list] = {}
-        for c in candles[start:]:
-            price = round(c.high, 6)
-            found = False
-            for lvl in list(highs):
-                if abs(lvl - price) <= self.equal_tolerance:
-                    highs[lvl].append(c.time)
-                    found = True
-                    break
-            if not found:
-                highs[price] = [c.time]
-        for lvl, times in highs.items():
-            if len(times) >= 2:
-                events.append({
-                    "type": "LiquidityPool",
-                    "side": "buy",
-                    "price": lvl,
-                    "times": [times[0], times[1]],
-                })
+        n = len(candles)
+        for i in range(start, n - 1):
+            price_i = round(candles[i].high, 6)
+            for j in range(i + 2, n):  # require at least one candle in between
+                price_j = round(candles[j].high, 6)
+                if abs(price_i - price_j) <= self.equal_tolerance:
+                    # Check for breach between i and j (exclusive)
+                    breached = False
+                    for k in range(i + 1, j):
+                        if candles[k].high > max(price_i, price_j) + self.equal_tolerance:
+                            breached = True
+                            break
+                    # Also check for breach before i
+                    for k in range(start, i):
+                        if candles[k].high > max(price_i, price_j) + self.equal_tolerance:
+                            breached = True
+                            break
+                    if not breached:
+                        events.append({
+                            "type": "LiquidityPool",
+                            "side": "buy",
+                            "price": price_i,
+                            "times": [candles[i].time, candles[j].time],
+                        })
         return events
 
     def _detect_equal_lows(self, candles: List[Candle], start: int) -> List[Dict]:
-        """Find pivot lows that repeat within tolerance (sell-side liquidity)."""
+        """Find pivot lows that repeat within tolerance (sell-side liquidity), with no breach in between and not consecutive."""
         events = []
-        lows: Dict[float, list] = {}
-        for c in candles[start:]:
-            price = round(c.low, 6)
-            found = False
-            for lvl in list(lows):
-                if abs(lvl - price) <= self.equal_tolerance:
-                    lows[lvl].append(c.time)
-                    found = True
-                    break
-            if not found:
-                lows[price] = [c.time]
-        for lvl, times in lows.items():
-            if len(times) >= 2:
-                events.append({
-                    "type": "LiquidityPool",
-                    "side": "sell",
-                    "price": lvl,
-                    "times": [times[0], times[1]],
-                })
+        n = len(candles)
+        for i in range(start, n - 1):
+            price_i = round(candles[i].low, 6)
+            for j in range(i + 2, n):  # require at least one candle in between
+                price_j = round(candles[j].low, 6)
+                if abs(price_i - price_j) <= self.equal_tolerance:
+                    # Check for breach between i and j (exclusive)
+                    breached = False
+                    for k in range(i + 1, j):
+                        if candles[k].low < min(price_i, price_j) - self.equal_tolerance:
+                            breached = True
+                            break
+                    # Also check for breach before i
+                    for k in range(start, i):
+                        if candles[k].low < min(price_i, price_j) - self.equal_tolerance:
+                            breached = True
+                            break
+                    if not breached:
+                        events.append({
+                            "type": "LiquidityPool",
+                            "side": "sell",
+                            "price": price_i,
+                            "times": [candles[i].time, candles[j].time],
+                        })
         return events
 
     def _detect_fvg(self, candles: List[Candle], start: int) -> List[Dict]:
