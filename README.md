@@ -105,11 +105,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
   <div style="margin-bottom: 10px; font-size: 1.2em; font-weight: bold; color: #fff;">Nima Kondori</div>
   <a href="https://www.linkedin.com/in/nima-kondori" target="_blank" style="margin-right: 20px; text-decoration: none;">
     <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/linkedin/linkedin-original.svg" alt="LinkedIn" width="36" style="vertical-align: middle;"/>
-    <span style="font-size: 1.1em; vertical-align: middle; margin-left: 8px; color: #0A66C2;">LinkedIn</span>
   </a>
   <a href="mailto:nimakondori96@gmail.com" style="text-decoration: none;">
     <img src="https://cdn-icons-png.flaticon.com/512/732/732200.png" alt="Email" width="36" style="vertical-align: middle;"/>
-    <span style="font-size: 1.1em; vertical-align: middle; margin-left: 8px; color: #EA4335;">Email</span>
   </a>
 </div>
 
