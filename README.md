@@ -10,6 +10,8 @@
 
 </div>
 
+![Market Analysis](assets/charts.png)
+
 ## 🌟 Features
 
 - 📈 Real-time market data analysis using yfinance
