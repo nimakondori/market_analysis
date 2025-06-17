@@ -108,7 +108,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
     <span style="font-size: 1.1em; vertical-align: middle; margin-left: 8px; color: #0A66C2;">LinkedIn</span>
   </a>
   <a href="mailto:nimakondori96@gmail.com" style="text-decoration: none;">
-    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#EA4335" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22,6 12,13 2,6"/></svg>
+    <img src="https://cdn-icons-png.flaticon.com/512/732/732200.png" alt="Email" width="36" style="vertical-align: middle;"/>
     <span style="font-size: 1.1em; vertical-align: middle; margin-left: 8px; color: #EA4335;">Email</span>
   </a>
 </div>
